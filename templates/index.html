@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Preparation</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <h1>Multimodal Data Process & Augmentation</h1>
+    
+    <form id="uploadForm" enctype="multipart/form-data" action="/upload/" method="post">
+        <input type="file" name="file" id="fileInput" required>
+        <button type="submit">Upload</button>
+    </form>
+
+    <!-- Container for Uploaded Content, Preprocessing, and Augmentation options -->
+    <div class="options-container">
+        <!-- Uploaded Content Block -->
+        <div class="options-block">
+            <h2>Uploaded Content</h2>
+            <div id="uploadedContent">
+                {{ uploaded_content|safe }}
+            </div>
+        </div>
+
+        <!-- Preprocessing Options Block -->
+        <div class="options-block">
+            <h2>Preprocessing Options</h2>
+            <select id="preprocessOptions">
+                {% for option in preprocess_options %}
+                    <option value="{{ option }}">{{ option }}</option>
+                {% endfor %}
+            </select>
+            <button onclick="applyOption('preprocess')">Apply</button>
+            <div class="result-wrapper">
+                <div id="preprocessResult" class="result-container"></div>
+            </div>
+        </div>
+
+        <!-- Augmentation Options Block -->
+        <div class="options-block">
+            <h2>Augmentation Options</h2>
+            <select id="augmentOptions">
+                {% for option in augmentation_options %}
+                    <option value="{{ option }}">{{ option }}</option>
+                {% endfor %}
+            </select>
+            <button onclick="applyOption('augment')">Apply</button>
+            <div class="result-wrapper">
+                <div id="augmentResult" class="result-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function applyOption(actionType) {
+            let selectedOption = '';
+            let url = '';
+    
+            if (actionType === 'preprocess') {
+                selectedOption = document.getElementById("preprocessOptions").value;
+                url = '/apply_preprocess/';
+            } else if (actionType === 'augment') {
+                selectedOption = document.getElementById("augmentOptions").value;
+                url = '/apply_augmentation/';
+            }
+    
+            const filePath = "{{ file_path }}"; // Server-side rendered file path
+            const fileType = "{{ file_type }}";  // Pass file_type to the request if needed
+    
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    option: selectedOption,
+                    file_path: filePath,
+                    file_type: fileType
+                })
+            });
+    
+            const data = await response.json();
+            
+            // Determine the type of output and display accordingly
+            if (data.output) {
+                if (actionType === 'preprocess') {
+                    if (data.file_type === "3d") {
+                        // Create a new container for the processed model
+                        document.getElementById("preprocessResult").innerHTML = `
+                            <div style="width: 100%; height: 400px;">
+                                <canvas id="preprocess-3d-canvas"></canvas>
+                            </div>
+                        `;
+                        // Initialize new viewer with the processed file path
+                        initProcessed3DViewer("preprocess-3d-canvas", data.output);
+                    } else {
+                        console.log('data.file_type: ',data.file_type)
+                        if (data.file_type.includes("image")) {
+                            // Display image if it's an image processing option
+                            console.log("Display image if it's an image processing option")
+                            document.getElementById("preprocessResult").innerHTML = 
+                                `<img src="data:image/jpeg;base64,${data.output}" alt="Processed Image" style="max-width: 100%; height: auto;" />`;
+                        } else if (data.file_type.includes("audio")) {
+                            // Display audio if it's an audio processing option
+                            console.log("Display audio if it's an audio processing option");
+                            document.getElementById("preprocessResult").innerHTML = 
+                                `<audio controls><source src="data:audio/wav;base64,${data.output}" type="audio/wav"></audio>`;
+                        } else if (data.file_type.includes("3d")) {
+                            document.getElementById("preprocessResult").innerHTML = `
+                                <div style="width: 100%; height: 400px;">
+                                    <canvas id="preprocess-3d-canvas" data-model-path="data:text/plain;base64,${data.output}"></canvas>
+                                </div>
+                            `;
+                            init3DViewer();
+                        } else {
+                            // Display text if it's a text processing option
+                            document.getElementById("preprocessResult").innerText = data.output;
+                        }
+                    }
+                } else if (actionType === 'augment') {
+                    if (data.file_type === "3d") {
+                        // Create a new container for the augmented model
+                        document.getElementById("augmentResult").innerHTML = `
+                            <div style="width: 100%; height: 400px;">
+                                <canvas id="augment-3d-canvas"></canvas>
+                            </div>
+                        `;
+                        // Initialize new viewer with the augmented file path
+                        initProcessed3DViewer("augment-3d-canvas", data.output);
+                    } else {
+                        if (data.file_type.includes("image")) {
+                            document.getElementById("augmentResult").innerHTML = 
+                                `<img src="data:image/jpeg;base64,${data.output}" alt="Augmented Image" style="max-width: 100%; height: auto;" />`;
+                        } else if (data.file_type.includes("audio")) {
+                            // Display audio if it's an audio processing option
+                            console.log("Display audio if it's an audio processing option");
+                            document.getElementById("augmentResult").innerHTML = 
+                                `<audio controls><source src="data:audio/wav;base64,${data.output}" type="audio/wav"></audio>`;
+                        } else if (data.file_type.includes("3d")) {
+                            document.getElementById("augmentResult").innerHTML = `
+                                <div style="width: 100%; height: 400px;">
+                                    <canvas id="augment-3d-canvas" data-model-path="data:text/plain;base64,${data.output}"></canvas>
+                                </div>
+                            `;
+                            init3DViewer();
+                        }
+                        else {
+                            document.getElementById("augmentResult").innerText = data.output;
+                        }
+                    }
+                }
+            } else {
+                // Handle cases where no output is received
+                const resultElement = actionType === 'preprocess' ? "preprocessResult" : "augmentResult";
+                document.getElementById(resultElement).innerText = "No output received";
+            }
+        }
+        
+        // Add this function to initialize 3D viewer
+        function init3DViewer() {
+            const canvas = document.getElementById('3d-canvas');
+            if (!canvas) return;
+
+            const scene = new THREE.Scene();
+            // Add a nice gradient background
+            scene.background = new THREE.Color(0x2c3e50);
+
+            const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+
+            // Enhanced lighting setup
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+
+            // Add multiple colored lights for better visual effect
+            const frontLight = new THREE.DirectionalLight(0x4e7cff, 0.8); // Blue-ish light
+            frontLight.position.set(1, 1, 2);
+            scene.add(frontLight);
+
+            const backLight = new THREE.DirectionalLight(0xff7e5f, 0.6); // Orange-ish light
+            backLight.position.set(-1, 0.5, -2);
+            scene.add(backLight);
+
+            const topLight = new THREE.DirectionalLight(0x7fff7e, 0.5); // Green-ish light
+            topLight.position.set(0, 2, 0);
+            scene.add(topLight);
+
+            // Add OrbitControls with enhanced settings
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // Add smooth damping effect
+            controls.dampingFactor = 0.05;
+            controls.rotateSpeed = 0.8;
+            camera.position.z = 5;
+
+            // Load OFF file
+            const modelPath = canvas.dataset.modelPath;
+            fetch(modelPath)
+                .then(response => response.text())
+                .then(data => {
+                    const geometry = parseOFF(data);
+                    
+                    // Create a more interesting material
+                    const material = new THREE.MeshPhysicalMaterial({ 
+                        color: 0x88ccff,  // Light blue base color
+                        metalness: 0.3,    // Slight metallic effect
+                        roughness: 0.4,    // Smoother surface
+                        clearcoat: 0.3,    // Add clearcoat effect
+                        clearcoatRoughness: 0.25,
+                        side: THREE.DoubleSide,
+                        flatShading: true
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    
+                    // Add subtle rotation animation
+                    mesh.rotation.x = 0.5;
+                    mesh.rotation.y = 0.5;
+
+                    scene.add(mesh);
+
+                    // Center the model
+                    geometry.computeBoundingSphere();
+                    const center = geometry.boundingSphere.center;
+                    mesh.position.sub(center);
+
+                    // Adjust camera distance based on model size
+                    const radius = geometry.boundingSphere.radius;
+                    camera.position.z = radius * 2.5;
+                    controls.update();
+
+                    // Add subtle continuous rotation
+                    function animateMesh() {
+                        mesh.rotation.y += 0.001;
+                        mesh.rotation.x += 0.0005;
+                    }
+
+                    // Update the animate function to include mesh animation
+                    function animate() {
+                        requestAnimationFrame(animate);
+                        controls.update();
+                        animateMesh();
+                        renderer.render(scene, camera);
+                    }
+                    animate();
+                });
+
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize, false);
+            function onWindowResize() {
+                const container = canvas.parentElement;
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+        }
+
+        // Function to parse OFF file format
+        function parseOFF(data) {
+            const lines = data.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+            
+            if (lines.length < 2) {
+                throw new Error('File too short');
+            }
+
+            const header = lines[0];
+            if (header !== 'OFF') {
+                throw new Error('Invalid OFF file header: ' + header);
+            }
+
+            const [vertices, faces] = lines[1].split(' ').map(Number);
+            if (isNaN(vertices) || isNaN(faces)) {
+                throw new Error('Invalid vertex/face count');
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            
+            try {
+                const vertexArray = [];
+                for (let i = 0; i < vertices; i++) {
+                    const coords = lines[i + 2].split(' ').map(Number);
+                    if (coords.length < 3) {
+                        throw new Error(`Invalid vertex data at line ${i + 2}`);
+                    }
+                    vertexArray.push(coords[0], coords[1], coords[2]);
+                }
+
+                const indices = [];
+                for (let i = 0; i < faces; i++) {
+                    const face = lines[i + vertices + 2].split(' ').map(Number);
+                    const vertexCount = face[0];
+                    if (vertexCount === 3) {
+                        indices.push(face[1], face[2], face[3]);
+                    } else if (vertexCount === 4) {
+                        indices.push(face[1], face[2], face[3]);
+                        indices.push(face[1], face[3], face[4]);
+                    }
+                }
+
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertexArray, 3));
+                geometry.setIndex(indices);
+                geometry.computeVertexNormals();
+                return geometry;
+            } catch (e) {
+                throw new Error('Error parsing OFF file: ' + e.message);
+            }
+        }
+
+        // Add new function to initialize viewer for processed/augmented models
+        function initProcessed3DViewer(canvasId, modelPath) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+
+            console.log('Loading model from path:', modelPath); // Debug log
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x2c3e50);
+
+            const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+
+            // Enhanced lighting setup
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+
+            const frontLight = new THREE.DirectionalLight(0x4e7cff, 0.8);
+            frontLight.position.set(1, 1, 2);
+            scene.add(frontLight);
+
+            const backLight = new THREE.DirectionalLight(0xff7e5f, 0.6);
+            backLight.position.set(-1, 0.5, -2);
+            scene.add(backLight);
+
+            const topLight = new THREE.DirectionalLight(0x7fff7e, 0.5);
+            topLight.position.set(0, 2, 0);
+            scene.add(topLight);
+
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.rotateSpeed = 0.8;
+            camera.position.z = 5;
+
+            // Load the processed/augmented OFF file
+            fetch(modelPath)
+                .then(response => {
+                    console.log('Response status:', response.status); // Debug log
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(data => {
+                    console.log('Received data length:', data.length); // Debug log
+                    console.log('First 100 chars:', data.substring(0, 100)); // Debug log
+                    const geometry = parseOFF(data);
+                    const material = new THREE.MeshPhysicalMaterial({ 
+                        color: 0x88ccff,
+                        metalness: 0.3,
+                        roughness: 0.4,
+                        clearcoat: 0.3,
+                        clearcoatRoughness: 0.25,
+                        side: THREE.DoubleSide,
+                        flatShading: true
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.rotation.x = 0.5;
+                    mesh.rotation.y = 0.5;
+                    scene.add(mesh);
+
+                    // Center and scale the model
+                    geometry.computeBoundingSphere();
+                    const center = geometry.boundingSphere.center;
+                    mesh.position.sub(center);
+
+                    const radius = geometry.boundingSphere.radius;
+                    camera.position.z = radius * 2.5;
+                    controls.update();
+
+                    // Animation
+                    function animate() {
+                        requestAnimationFrame(animate);
+                        mesh.rotation.y += 0.001;
+                        mesh.rotation.x += 0.0005;
+                        controls.update();
+                        renderer.render(scene, camera);
+                    }
+                    animate();
+                })
+                .catch(error => {
+                    console.error('Error loading processed model:', error);
+                    console.error('Model path was:', modelPath); // Debug log
+                    document.getElementById(canvasId).parentElement.innerHTML = 
+                        `<p>Error loading processed model: ${error.message}</p>`;
+                });
+
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize, false);
+            function onWindowResize() {
+                const container = canvas.parentElement;
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+        }
+
+        // Initialize 3D viewer when page loads
+        document.addEventListener('DOMContentLoaded', init3DViewer);
+    </script>
+</body>
+</html>
